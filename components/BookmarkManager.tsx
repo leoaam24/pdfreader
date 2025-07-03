@@ -1,6 +1,6 @@
-
 import React, { useRef } from 'react';
 import type { Bookmark } from '../types';
+import type { ViewMode } from '../App';
 import { BookmarkIcon, TrashIcon, CloseIcon, DownloadIcon, FileImportIcon } from './icons';
 
 interface BookmarkManagerProps {
@@ -11,6 +11,7 @@ interface BookmarkManagerProps {
     onRemoveBookmark: (page: number) => void;
     onUploadBookmarks: (bookmarks: Bookmark[]) => void;
     fileName: string;
+    viewMode: ViewMode;
 }
 
 export const BookmarkManager: React.FC<BookmarkManagerProps> = ({
@@ -20,7 +21,8 @@ export const BookmarkManager: React.FC<BookmarkManagerProps> = ({
     onGoToPage,
     onRemoveBookmark,
     onUploadBookmarks,
-    fileName
+    fileName,
+    viewMode,
 }) => {
     const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -28,6 +30,12 @@ export const BookmarkManager: React.FC<BookmarkManagerProps> = ({
 
     const handleGoTo = (page: number) => {
         onGoToPage(page);
+        if (viewMode === 'scroll') {
+            const pageElement = document.getElementById(`page-container-${page}`);
+            if (pageElement) {
+                pageElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+        }
         onClose();
     };
     

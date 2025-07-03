@@ -1,0 +1,21 @@
+{
+  "short_name": "PDF Reader",
+  "name": "PDF Book Reader",
+  "description": "An elegant PDF reader with a realistic book-style interface.",
+  "icons": [
+    {
+      "src": "/icons/icon-192x192.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    },
+    {
+      "src": "/icons/icon-512x512.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    }
+  ],
+  "start_url": ".",
+  "display": "standalone",
+  "theme_color": "#292524",
+  "background_color": "#292524"
+}

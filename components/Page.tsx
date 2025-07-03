@@ -17,8 +17,22 @@ export const Page: React.FC<PageProps> = ({ pdfDoc, pageNum, width }) => {
         setIsLoading(true);
         setError(false);
         
+        let isEffectCancelled = false;
+
+        // The cleanup function is the single source of truth for cancelling an ongoing render.
+        // It runs on unmount or before the effect runs again.
+        const cleanup = () => {
+            isEffectCancelled = true;
+            if (renderTaskRef.current) {
+                renderTaskRef.current.cancel();
+                renderTaskRef.current = null;
+            }
+        };
+
         const canvas = canvasRef.current;
-        if (!canvas) return;
+        if (!canvas) {
+            return cleanup;
+        }
 
         // Handle invalid page numbers or missing width by clearing the canvas.
         if (pageNum <= 0 || pageNum > pdfDoc.numPages || !width) {
@@ -27,22 +41,17 @@ export const Page: React.FC<PageProps> = ({ pdfDoc, pageNum, width }) => {
             if (context) {
                 context.clearRect(0, 0, canvas.width, canvas.height);
             }
-            return;
+            return cleanup;
         }
-        
-        let isEffectCancelled = false;
 
         pdfDoc.getPage(pageNum).then(page => {
             if (isEffectCancelled || !canvasRef.current) return;
 
-            // Get the viewport at scale 1.0 to get original dimensions
             const viewport = page.getViewport({ scale: 1.0 });
-            
-            // Calculate the scale to fit the page into the container's width
             const scale = width / viewport.width;
             const scaledViewport = page.getViewport({ scale });
 
-            const canvas = canvasRef.current; // Re-check canvas existence inside promise
+            const canvas = canvasRef.current;
             const context = canvas.getContext('2d');
             if (!context) return;
             
@@ -54,19 +63,23 @@ export const Page: React.FC<PageProps> = ({ pdfDoc, pageNum, width }) => {
                 viewport: scaledViewport
             };
 
-            // This is the key fix: cancel any render task that may still be running.
+            // Cancel any previous render task before starting a new one.
             if (renderTaskRef.current) {
                 renderTaskRef.current.cancel();
             }
 
             // Start the new render task and store it in the ref.
-            renderTaskRef.current = page.render(renderContext);
+            const task = page.render(renderContext);
+            renderTaskRef.current = task;
 
-            renderTaskRef.current.promise.then(() => {
+            task.promise.then(() => {
                 if (!isEffectCancelled) {
                     setIsLoading(false);
                 }
-                renderTaskRef.current = null; // Task is complete
+                // If this task is still the current one, clear the ref.
+                if (renderTaskRef.current === task) {
+                    renderTaskRef.current = null;
+                }
             }).catch(err => {
                 // A "RenderingCancelledException" is expected and should not be treated as an error.
                 if (err.name !== 'RenderingCancelledException') {
@@ -76,7 +89,10 @@ export const Page: React.FC<PageProps> = ({ pdfDoc, pageNum, width }) => {
                         setIsLoading(false);
                     }
                 }
-                renderTaskRef.current = null; // Task is no longer active
+                // If this task is still the current one, clear the ref.
+                if (renderTaskRef.current === task) {
+                    renderTaskRef.current = null;
+                }
             });
 
         }).catch(err => {
@@ -87,14 +103,7 @@ export const Page: React.FC<PageProps> = ({ pdfDoc, pageNum, width }) => {
             }
         });
         
-        // The cleanup function for the effect.
-        return () => {
-            isEffectCancelled = true;
-            if (renderTaskRef.current) {
-                renderTaskRef.current.cancel();
-                renderTaskRef.current = null;
-            }
-        };
+        return cleanup;
 
     }, [pdfDoc, pageNum, width]);
 

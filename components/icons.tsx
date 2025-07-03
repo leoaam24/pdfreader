@@ -78,11 +78,14 @@ export const ChevronDoubleRightIcon: React.FC<{ className?: string }> = ({ class
     </svg>
 );
 
-export const DeviceRotateIcon: React.FC<{ className?: string }> = ({ className }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M7 6.75V17.25a1.5 1.5 0 001.5 1.5h7.5a1.5 1.5 0 001.5-1.5V6.75m-10.5 0a1.5 1.5 0 011.5-1.5h7.5a1.5 1.5 0 011.5 1.5m-10.5 0h10.5" />
-        <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 9.75h-.75a1.5 1.5 0 00-1.5 1.5v1.5a1.5 1.5 0 001.5 1.5h.75m16.5-4.5h.75a1.5 1.5 0 011.5 1.5v1.5a1.5 1.5 0 01-1.5 1.5h-.75" />
-        <path strokeLinecap="round" strokeLinejoin="round" d="M21 12.75a8.966 8.966 0 01-8.966 8.966c-4.95 0-8.966-4.016-8.966-8.966s4.016-8.966 8.966-8.966" />
-        <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 5.25l-3.375 3.375-3.375-3.375" />
+export const BookLayoutIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25" />
+    </svg>
+);
+
+export const ScrollLayoutIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
     </svg>
 );

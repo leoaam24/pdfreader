@@ -5,10 +5,11 @@ import { FileUpload } from './components/FileUpload';
 import { BookmarkManager } from './components/BookmarkManager';
 import { useBookmarks } from './hooks/useBookmarks';
 import { BookOpenIcon, UploadIcon } from './components/icons';
-import { OrientationLock } from './components/OrientationLock';
 
 // pdfjs-dist is loaded from a CDN, so we declare it here to satisfy TypeScript
 declare const pdfjsLib: any;
+
+export type ViewMode = 'book' | 'scroll';
 
 const App: React.FC = () => {
     const [pdfFile, setPdfFile] = useState<File | null>(null);
@@ -17,6 +18,7 @@ const App: React.FC = () => {
     const [fileName, setFileName] = useState<string>('');
     const [isLoading, setIsLoading] = useState(false);
     const [isBookmarkManagerOpen, setBookmarkManagerOpen] = useState(false);
+    const [viewMode, setViewMode] = useState<ViewMode>('book');
 
     const { bookmarks, addBookmark, removeBookmark, setAllBookmarks } = useBookmarks(fileName);
 
@@ -57,12 +59,14 @@ const App: React.FC = () => {
     const handleGoToPage = (pageNumber: number) => {
         if (pdfDoc) {
             const newPage = Math.max(1, Math.min(pageNumber, pdfDoc.numPages));
-            // Ensure the target page is always on the left for consistency
-            const targetPage = newPage % 2 === 0 ? newPage - 1 : newPage;
-            if (targetPage > 0) {
-                 setCurrentPage(targetPage);
+            if (viewMode === 'book') {
+                 // In book mode, ensure the target page is on the left for consistency in landscape
+                const isLandscape = window.innerWidth > window.innerHeight;
+                const targetPage = isLandscape && newPage % 2 === 0 ? newPage - 1 : newPage;
+                setCurrentPage(targetPage > 0 ? targetPage : 1);
             } else {
-                 setCurrentPage(1);
+                // In scroll mode, just set the page
+                setCurrentPage(newPage);
             }
         }
     };
@@ -76,8 +80,7 @@ const App: React.FC = () => {
     };
 
     return (
-        <div className="min-h-screen bg-stone-800 bg-[url('https://www.transparenttextures.com/patterns/wood-pattern.png')] text-stone-900 font-sans flex flex-col items-center justify-center p-4 overflow-hidden">
-            <OrientationLock />
+        <div className="min-h-screen bg-stone-800 bg-[url('https://www.transparenttextures.com/patterns/wood-pattern.png')] text-stone-900 font-sans flex flex-col items-center justify-center p-0 sm:p-4 overflow-hidden">
             {!pdfDoc ? (
                 <FileUpload onFileSelect={handleFileChange} isLoading={isLoading} />
             ) : (
@@ -90,6 +93,8 @@ const App: React.FC = () => {
                         bookmarks={bookmarks}
                         addBookmark={addBookmark}
                         removeBookmark={removeBookmark}
+                        viewMode={viewMode}
+                        setViewMode={setViewMode}
                     />
                     <div className="fixed bottom-4 right-4 z-[60] flex flex-col items-end gap-3">
                          <button 
@@ -99,7 +104,7 @@ const App: React.FC = () => {
                             aria-label="View Bookmarks"
                         >
                             <BookOpenIcon className="w-5 h-5"/>
-                            <span>View Bookmarks</span>
+                            <span className="hidden sm:inline">View Bookmarks</span>
                         </button>
                         <button 
                             onClick={handleReset}
@@ -108,7 +113,7 @@ const App: React.FC = () => {
                             aria-label="Load Another PDF"
                         >
                             <UploadIcon className="w-5 h-5"/>
-                            <span>Load New PDF</span>
+                            <span className="hidden sm:inline">Load New PDF</span>
                         </button>
                     </div>
 
@@ -120,10 +125,11 @@ const App: React.FC = () => {
                         onRemoveBookmark={removeBookmark}
                         onUploadBookmarks={setAllBookmarks}
                         fileName={fileName || 'bookmarks'}
+                        viewMode={viewMode}
                     />
                 </>
             )}
-            <footer className="fixed bottom-2 left-4 text-stone-400 text-xs z-0">
+            <footer className="fixed bottom-2 left-4 text-stone-400 text-xs z-0 hidden sm:block">
                 <p>PDF Book Reader</p>
             </footer>
         </div>
