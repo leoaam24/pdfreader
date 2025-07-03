@@ -1,0 +1,6 @@
+{
+  "name": "PDF Book Reader",
+  "description": "An elegant PDF reader with a realistic book-style interface. Upload your PDF and enjoy a unique reading experience with animated page turns and local bookmarking to save your progress.",
+  "requestFramePermissions": [],
+  "prompt": ""
+}
