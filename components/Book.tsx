@@ -44,43 +44,23 @@ const renderBookmarkIconFn = (
 export const Book: React.FC<BookProps> = (props) => {
     const { pdfDoc, currentPage, setCurrentPage, viewMode, orientation, bookmarks, addBookmark, removeBookmark } = props;
     const isLandscape = orientation === 'landscape';
-    const pageRefs = useRef<(HTMLDivElement | null)[]>([]);
 
     useEffect(() => {
         if (viewMode === 'scroll') {
             const pageElement = document.getElementById(`page-container-${currentPage}`);
             if (pageElement) {
-                pageElement.scrollIntoView({ behavior: 'auto', block: 'start' });
+                // Smooth scroll for user-initiated jumps, auto for initial loads
+                const isUserJump = pageElement.dataset.userScrolled === 'true';
+                pageElement.scrollIntoView({ 
+                    behavior: isUserJump ? 'smooth' : 'auto', 
+                    block: 'start' 
+                });
+                if (isUserJump) {
+                    delete pageElement.dataset.userScrolled;
+                }
             }
         }
     }, [viewMode, currentPage]);
-    
-    // Intersection observer for scroll mode
-    useEffect(() => {
-        if (viewMode === 'scroll') {
-            const observer = new IntersectionObserver((entries) => {
-                entries.forEach(entry => {
-                    if (entry.isIntersecting) {
-                        const pageNum = parseInt(entry.target.getAttribute('data-page-num') || '0', 10);
-                        if (pageNum) {
-                            setCurrentPage(pageNum);
-                        }
-                    }
-                });
-            }, { root: null, rootMargin: '0px', threshold: 0.4 });
-
-            const currentRefs = pageRefs.current;
-            currentRefs.forEach(ref => {
-                if (ref) observer.observe(ref);
-            });
-
-            return () => {
-                currentRefs.forEach(ref => {
-                    if (ref) observer.unobserve(ref);
-                });
-            };
-        }
-    }, [viewMode, pdfDoc.numPages, setCurrentPage]);
 
     const handleBookmarkClick = useCallback((pageNum: number) => {
         if (pageNum <= 0 || pageNum > pdfDoc.numPages) return;
@@ -98,34 +78,81 @@ export const Book: React.FC<BookProps> = (props) => {
 
     // In portrait, App.tsx forces viewMode to 'scroll'.
     // This logic respects that and provides a fallback.
-    if (viewMode === 'scroll') {
-        return <ScrollView {...props} pageRefs={pageRefs} handleBookmarkClick={handleBookmarkClick} />;
+    if (viewMode === 'scroll' || !isLandscape) {
+        return <ScrollView {...props} handleBookmarkClick={handleBookmarkClick} />;
     }
     
     // Book mode is only possible in landscape.
-    if (isLandscape) {
-       return <BookView {...props} isLandscape={isLandscape} handleBookmarkClick={handleBookmarkClick} />;
-    }
-
-    // Fallback for portrait + book mode state, which shouldn't happen.
-    return <ScrollView {...props} pageRefs={pageRefs} handleBookmarkClick={handleBookmarkClick} />;
+    return <BookView {...props} isLandscape={isLandscape} handleBookmarkClick={handleBookmarkClick} />;
 };
 
 
 // --- Scroll View Component ---
-const ScrollView: React.FC<BookProps & { pageRefs: React.MutableRefObject<(HTMLDivElement | null)[]>; handleBookmarkClick: (pageNum: number) => void; }> = (props) => {
-    const { pdfDoc, setViewMode, viewMode, onGoToPage, currentPage, pageRefs, orientation, bookmarks, handleBookmarkClick } = props;
-    const [pageWidth, setPageWidth] = useState(window.innerWidth * 0.9);
+const ScrollView: React.FC<BookProps & { handleBookmarkClick: (pageNum: number) => void; }> = (props) => {
+    const { pdfDoc, setViewMode, viewMode, onGoToPage, currentPage, orientation, bookmarks, handleBookmarkClick, setCurrentPage } = props;
+    
+    const [pageWidth, setPageWidth] = useState(window.innerWidth > 768 ? window.innerWidth * 0.8 : window.innerWidth * 0.95);
+    const [pageAspectRatio, setPageAspectRatio] = useState(1.414); // A4-like default
 
+    // Virtualization state: stores page numbers that should be rendered.
+    const [visiblePages, setVisiblePages] = useState<Set<number>>(() => new Set([1,2])); // Always show first two pages
+    const observer = useRef<IntersectionObserver | null>(null);
+
+    // Get page aspect ratio from the PDF for accurate placeholder heights
     useEffect(() => {
-        const handleResize = () => setPageWidth(window.innerWidth * 0.9);
+        let isCancelled = false;
+        pdfDoc.getPage(1).then(page => {
+            if (isCancelled) return;
+            const viewport = page.getViewport({ scale: 1 });
+            setPageAspectRatio(viewport.height / viewport.width);
+        }).catch(err => {
+            if (!isCancelled) {
+                console.error("Could not get page 1 for aspect ratio", err);
+            }
+        });
+
+        return () => {
+            isCancelled = true;
+        };
+    }, [pdfDoc]);
+
+    // Update page width on resize
+    useEffect(() => {
+        const handleResize = () => {
+            setPageWidth(window.innerWidth > 768 ? window.innerWidth * 0.8 : window.innerWidth * 0.95);
+        };
         window.addEventListener('resize', handleResize);
         return () => window.removeEventListener('resize', handleResize);
     }, []);
 
+    const observerCallback = useCallback((entries: IntersectionObserverEntry[]) => {
+        entries.forEach(entry => {
+            const pageNum = parseInt(entry.target.getAttribute('data-page-num') || '0', 10);
+            if (!pageNum) return;
+
+            if (entry.isIntersecting) {
+                setVisiblePages(prev => new Set(prev).add(pageNum)); // Render page
+                if (entry.intersectionRatio > 0.4) {
+                    setCurrentPage(pageNum); // Update current page number
+                }
+            }
+        });
+    }, [setCurrentPage]);
+
+    // Setup the Intersection Observer
     useEffect(() => {
-        pageRefs.current = pageRefs.current.slice(0, pdfDoc.numPages);
-     }, [pdfDoc.numPages, pageRefs]);
+        observer.current = new IntersectionObserver(observerCallback, {
+            root: null, // observe against the viewport
+            rootMargin: '500px', // pre-load pages that are 500px away from the viewport
+            threshold: [0, 0.4] // trigger when element enters view and when it's 40% visible
+        });
+        return () => observer.current?.disconnect();
+    }, [observerCallback]);
+
+    // A stable callback ref to attach the observer to each page's container
+    const pageContainerRef = useCallback((node: HTMLDivElement | null) => {
+        if (node) observer.current?.observe(node);
+    }, []);
 
     const handleJumpToPage = (e: React.FormEvent) => {
         e.preventDefault();
@@ -133,13 +160,18 @@ const ScrollView: React.FC<BookProps & { pageRefs: React.MutableRefObject<(HTMLD
         const input = form.elements.namedItem('page-jump-input') as HTMLInputElement;
         const pageNum = parseInt(input.value, 10);
         if (!isNaN(pageNum)) {
-            onGoToPage(pageNum);
             const pageElement = document.getElementById(`page-container-${pageNum}`);
-            pageElement?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            if (pageElement) {
+                // Mark element so the main effect knows to use 'smooth' scrolling
+                pageElement.dataset.userScrolled = 'true';
+            }
+            onGoToPage(pageNum);
             input.value = '';
             input.blur();
         }
     };
+    
+    const pageHeight = pageWidth * pageAspectRatio;
     
     return (
         <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-transparent" role="main">
@@ -149,13 +181,21 @@ const ScrollView: React.FC<BookProps & { pageRefs: React.MutableRefObject<(HTMLD
                         <div 
                             key={pageNum} 
                             id={`page-container-${pageNum}`} 
-                            ref={el => { if(el) pageRefs.current[pageNum - 1] = el; }}
+                            ref={pageContainerRef}
                             data-page-num={pageNum}
-                            className="shadow-lg relative"
-                            style={{ width: `${pageWidth}px` }}
+                            className="shadow-lg relative bg-stone-200"
+                            style={{ width: `${pageWidth}px`, height: `${pageHeight}px` }}
                         >
-                            <Page pdfDoc={pdfDoc} pageNum={pageNum} width={pageWidth} />
-                            {renderBookmarkIconFn(pageNum, bookmarks, handleBookmarkClick, 'right', pdfDoc.numPages)}
+                            {visiblePages.has(pageNum) ? (
+                                <>
+                                    <Page pdfDoc={pdfDoc} pageNum={pageNum} width={pageWidth} />
+                                    {renderBookmarkIconFn(pageNum, bookmarks, handleBookmarkClick, 'right', pdfDoc.numPages)}
+                                </>
+                            ) : (
+                                <div className="absolute inset-0 flex items-center justify-center">
+                                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-stone-400"></div>
+                                </div>
+                            )}
                         </div>
                     ))}
                 </div>
@@ -194,15 +234,17 @@ const BookView: React.FC<BookProps & { isLandscape: boolean; handleBookmarkClick
     const [isTurning, setIsTurning] = useState(false);
     const [direction, setDirection] = useState<'next' | 'prev' | null>(null);
     const [containerWidth, setContainerWidth] = useState(1000);
+    const [pageHeight, setPageHeight] = useState(700);
     const [zoom, setZoom] = useState(1);
     const [pageAspectRatio, setPageAspectRatio] = useState(1.414);
     const [jumpToPageInput, setJumpToPageInput] = useState('');
     
-    const pageIncrement = isLandscape ? 2 : 1;
+    const pageIncrement = 2; // BookView is always landscape
 
     const containerRef = useRef<HTMLDivElement>(null);
     const leftPageRef = useRef<HTMLDivElement>(null);
     const rightPageRef = useRef<HTMLDivElement>(null);
+    const bottomControlsRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         pdfDoc.getPage(1).then(page => {
@@ -212,26 +254,43 @@ const BookView: React.FC<BookProps & { isLandscape: boolean; handleBookmarkClick
 
     useEffect(() => {
         const updateSize = () => {
-            const viewportHeight = window.innerHeight * 0.95; 
-            const viewportWidth = window.innerWidth * 0.95;
-            const bookAspectRatio = (isLandscape ? 2 : 1) / pageAspectRatio; 
+            // Define available space for the book container.
+            const verticalPadding = 32; // Corresponds to py-4 on the parent container.
+            const controlsHeight = bottomControlsRef.current?.offsetHeight || 60;
+            const availableHeight = window.innerHeight - verticalPadding - controlsHeight;
+            const availableWidth = window.innerWidth;
+            const targetWidthPercentage = 0.95;
+
+            // Calculate width based on viewport width constraint.
+            const widthIfLimitedByWidth = availableWidth * targetWidthPercentage;
+            // Calculate width based on viewport height constraint.
+            const widthIfLimitedByHeight = availableHeight * (2 / pageAspectRatio);
+
+            // The final width is the smaller of the two, ensuring the book fits both vertically and horizontally.
+            const newWidth = Math.min(widthIfLimitedByWidth, widthIfLimitedByHeight);
             
-            let newWidth = Math.min(viewportWidth, viewportHeight * bookAspectRatio);
             setContainerWidth(newWidth);
+            // The page height is derived from the final calculated width and the page's aspect ratio.
+            setPageHeight((newWidth / 2) * pageAspectRatio);
         };
-        updateSize();
+
+        // Run calculation once after a short delay to allow controls to render for accurate height.
+        const timeoutId = setTimeout(updateSize, 50);
         window.addEventListener('resize', updateSize);
-        return () => window.removeEventListener('resize', updateSize);
-    }, [pageAspectRatio, isLandscape]);
+
+        return () => {
+            clearTimeout(timeoutId);
+            window.removeEventListener('resize', updateSize);
+        };
+    }, [pageAspectRatio]);
     
-    const page_width = isLandscape ? containerWidth / 2 : containerWidth;
-    const page_height = page_width * pageAspectRatio;
+    const page_width = containerWidth / 2;
 
     useEffect(() => {
         setZoom(1);
         if (leftPageRef.current) leftPageRef.current.scrollTop = 0;
         if (rightPageRef.current) rightPageRef.current.scrollTop = 0;
-    }, [currentPage]);
+    }, [currentPage, containerWidth]);
 
     const turnPage = (dir: 'next' | 'prev') => {
         if (isTurning) return;
@@ -271,17 +330,17 @@ const BookView: React.FC<BookProps & { isLandscape: boolean; handleBookmarkClick
 
         let frontPageNum, backPageNum;
         if (direction === 'next') {
-            frontPageNum = isLandscape ? currentPage + 1 : currentPage;
-            backPageNum = isLandscape ? currentPage + 2 : currentPage + 1;
+            frontPageNum = currentPage + 1;
+            backPageNum = currentPage + 2;
         } else { // prev
-            frontPageNum = isLandscape ? currentPage - 2 : currentPage - 1;
-            backPageNum = isLandscape ? currentPage - 1 : currentPage;
+            frontPageNum = currentPage - 2;
+            backPageNum = currentPage - 1;
         }
         
         const flipperStyle: React.CSSProperties = {
             width: `${page_width}px`,
-            height: `${page_height}px`,
-            left: (direction === 'next' && isLandscape) ? '50%' : '0%',
+            height: `${pageHeight}px`,
+            left: '50%',
             transform: direction === 'next' ? 'rotateY(0deg)' : 'rotateY(-180deg)',
         };
         
@@ -310,24 +369,22 @@ const BookView: React.FC<BookProps & { isLandscape: boolean; handleBookmarkClick
         return renderBookmarkIconFn(pageNum, bookmarks, handleBookmarkClick, side, pdfDoc.numPages);
     }
     
-    const finalContainerWidth = isLandscape ? containerWidth + 32 : containerWidth + 16;
-    const finalContainerHeight = page_height + (isLandscape ? 32 : 16);
+    const finalContainerWidth = containerWidth + 32;
+    const finalContainerHeight = pageHeight + 32;
 
     return (
-        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center p-2 sm:p-4 bg-transparent" role="main">
-            <div className="relative flex-grow flex items-center justify-center w-full">
-                {isLandscape && (
-                  <div className="hidden md:flex fixed left-4 top-1/2 -translate-y-1/2 z-[60] flex-col items-center gap-4">
-                      <button onClick={() => onGoToPage(1)} disabled={currentPage <= 1 || isTurning} className="p-2 bg-stone-900/50 backdrop-blur-sm rounded-full text-stone-300 hover:text-white hover:bg-white/20 transition-all disabled:opacity-30 disabled:cursor-not-allowed" title="First Page"><ChevronDoubleLeftIcon className="w-6 h-6" /></button>
-                      <button onClick={() => turnPage('prev')} disabled={currentPage <= 1 || isTurning} className="p-3 bg-stone-900/50 backdrop-blur-sm rounded-full text-stone-300 hover:text-white hover:bg-white/20 transition-all disabled:opacity-30 disabled:cursor-not-allowed" title="Previous Page"><ArrowLeftIcon className="w-8 h-8" /></button>
-                  </div>
-                )}
+        <div className="fixed inset-0 z-50 flex flex-col items-center justify-start bg-transparent" role="main">
+            <div className="relative flex-grow flex items-center justify-center w-full py-4">
+                <div className="hidden md:flex fixed left-4 top-1/2 -translate-y-1/2 z-[60] flex-col items-center gap-4">
+                      <button onClick={() => onGoToPage(1)} disabled={currentPage <= 1 || isTurning} className="p-1.5 bg-stone-900/40 backdrop-blur-sm rounded-full text-stone-300 hover:text-white hover:bg-white/20 transition-all disabled:opacity-30 disabled:cursor-not-allowed" title="First Page"><ChevronDoubleLeftIcon className="w-5 h-5" /></button>
+                      <button onClick={() => turnPage('prev')} disabled={currentPage <= 1 || isTurning} className="p-2 bg-stone-900/40 backdrop-blur-sm rounded-full text-stone-300 hover:text-white hover:bg-white/20 transition-all disabled:opacity-30 disabled:cursor-not-allowed" title="Previous Page"><ArrowLeftIcon className="w-7 h-7" /></button>
+                </div>
 
-                <div ref={containerRef} className="relative bg-stone-800 bg-[url('https://www.transparenttextures.com/patterns/wood-pattern.png')] p-2 md:p-4 shadow-2xl rounded-lg" style={{ width: `${finalContainerWidth}px`, height: `${finalContainerHeight}px` }}>
+                <div ref={containerRef} className="relative bg-stone-800 bg-[url('https://www.transparenttextures.com/patterns/wood-pattern.png')] p-4 shadow-2xl rounded-lg" style={{ width: `${finalContainerWidth}px`, height: `${finalContainerHeight}px` }}>
                     <div className="relative w-full h-full perspective-2000">
-                        <div className="relative w-full h-full flex" style={{ height: `${page_height}px`, width: `${containerWidth}px` }}>
-                            {/* Left/Single Page */}
-                            <div ref={leftPageRef} className="h-full relative overflow-auto" style={{ width: `${page_width}px`, boxShadow: isLandscape ? 'inset -5px 0 15px -5px rgba(0,0,0,0.4)' : 'none'}}>
+                        <div className="relative w-full h-full flex" style={{ height: `${pageHeight}px`, width: `${containerWidth}px` }}>
+                            {/* Left Page */}
+                            <div ref={leftPageRef} className="h-full relative overflow-auto w-1/2" style={{boxShadow: 'inset -5px 0 15px -5px rgba(0,0,0,0.4)'}}>
                                 <Page pdfDoc={pdfDoc} pageNum={leftPageNum} width={page_width * zoom} />
                                 {renderBookmarkIcon(leftPageNum, 'left')}
                                 {currentPage > 1 && (
@@ -337,35 +394,31 @@ const BookView: React.FC<BookProps & { isLandscape: boolean; handleBookmarkClick
                                 )}
                             </div>
 
-                            {/* Right Page (Landscape only) */}
-                            {isLandscape && (
-                                <div ref={rightPageRef} className="w-1/2 h-full relative overflow-auto" style={{ boxShadow: 'inset 5px 0 15px -5px rgba(0,0,0,0.4)' }}>
-                                    <Page pdfDoc={pdfDoc} pageNum={rightPageNum} width={page_width * zoom} />
-                                    {renderBookmarkIcon(rightPageNum, 'right')}
-                                    {rightPageNum < pdfDoc.numPages && (
-                                        <button onClick={() => turnPage('next')} aria-label="Next Page" className="absolute top-0 right-0 w-1/5 h-full z-20 group cursor-pointer bg-transparent border-none p-0">
-                                            <div className="absolute inset-0 bg-black opacity-0 group-hover:opacity-10 transition-opacity duration-300 rounded-r-md" />
-                                        </button>
-                                    )}
-                                </div>
-                            )}
+                            {/* Right Page */}
+                            <div ref={rightPageRef} className="w-1/2 h-full relative overflow-auto" style={{ boxShadow: 'inset 5px 0 15px -5px rgba(0,0,0,0.4)' }}>
+                                <Page pdfDoc={pdfDoc} pageNum={rightPageNum} width={page_width * zoom} />
+                                {renderBookmarkIcon(rightPageNum, 'right')}
+                                {rightPageNum < pdfDoc.numPages && (
+                                    <button onClick={() => turnPage('next')} aria-label="Next Page" className="absolute top-0 right-0 w-1/5 h-full z-20 group cursor-pointer bg-transparent border-none p-0">
+                                        <div className="absolute inset-0 bg-black opacity-0 group-hover:opacity-10 transition-opacity duration-300 rounded-r-md" />
+                                    </button>
+                                )}
+                            </div>
                             
-                            {isLandscape && <div className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-full bg-gradient-to-r from-transparent via-black/30 to-transparent pointer-events-none z-10" />}
+                            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-full bg-gradient-to-r from-transparent via-black/30 to-transparent pointer-events-none z-10" />
                             {renderPageTurner()}
                         </div>
                     </div>
                 </div>
                 
-                {isLandscape && (
-                  <div className="hidden md:flex fixed right-4 top-1/2 -translate-y-1/2 z-[60] flex-col items-center gap-4">
-                     <button onClick={() => turnPage('next')} disabled={currentPage + pageIncrement - 1 >= pdfDoc.numPages || isTurning} className="p-3 bg-stone-900/50 backdrop-blur-sm rounded-full text-stone-300 hover:text-white hover:bg-white/20 transition-all disabled:opacity-30 disabled:cursor-not-allowed" title="Next Page"><ArrowRightIcon className="w-8 h-8" /></button>
-                     <button onClick={() => onGoToPage(pdfDoc.numPages)} disabled={currentPage + pageIncrement -1 >= pdfDoc.numPages || isTurning} className="p-2 bg-stone-900/50 backdrop-blur-sm rounded-full text-stone-300 hover:text-white hover:bg-white/20 transition-all disabled:opacity-30 disabled:cursor-not-allowed" title="Last Page"><ChevronDoubleRightIcon className="w-6 h-6" /></button>
-                  </div>
-                )}
+                <div className="hidden md:flex fixed right-4 top-1/2 -translate-y-1/2 z-[60] flex-col items-center gap-4">
+                     <button onClick={() => turnPage('next')} disabled={currentPage + pageIncrement - 1 >= pdfDoc.numPages || isTurning} className="p-2 bg-stone-900/40 backdrop-blur-sm rounded-full text-stone-300 hover:text-white hover:bg-white/20 transition-all disabled:opacity-30 disabled:cursor-not-allowed" title="Next Page"><ArrowRightIcon className="w-7 h-7" /></button>
+                     <button onClick={() => onGoToPage(pdfDoc.numPages)} disabled={currentPage + pageIncrement -1 >= pdfDoc.numPages || isTurning} className="p-1.5 bg-stone-900/40 backdrop-blur-sm rounded-full text-stone-300 hover:text-white hover:bg-white/20 transition-all disabled:opacity-30 disabled:cursor-not-allowed" title="Last Page"><ChevronDoubleRightIcon className="w-5 h-5" /></button>
+                </div>
             </div>
 
             {/* Bottom Control Bar */}
-            <div className="w-full max-w-4xl mt-2 p-1 bg-stone-900/60 backdrop-blur-sm rounded-lg flex items-center justify-center flex-wrap gap-x-2 sm:gap-x-4 gap-y-2">
+            <div ref={bottomControlsRef} className="w-full max-w-4xl mt-auto p-1 bg-stone-900/60 backdrop-blur-sm rounded-lg flex items-center justify-center flex-wrap gap-x-2 sm:gap-x-4 gap-y-2">
                 <div className="flex items-center gap-1 text-stone-300">
                     <button onClick={() => onGoToPage(1)} disabled={currentPage <= 1 || isTurning} className="p-2 rounded-md hover:bg-white/10 disabled:opacity-30" title="First Page"><ChevronDoubleLeftIcon className="w-5 h-5" /></button>
                     <button onClick={() => turnPage('prev')} disabled={currentPage <= 1 || isTurning} className="p-2 rounded-md hover:bg-white/10 disabled:opacity-30" title="Previous Page"><ArrowLeftIcon className="w-5 h-5" /></button>

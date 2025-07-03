@@ -91,7 +91,7 @@ const App: React.FC = () => {
     };
 
     return (
-        <div className="min-h-screen bg-stone-800 bg-[url('https://www.transparenttextures.com/patterns/wood-pattern.png')] text-stone-900 font-sans flex flex-col items-center justify-center p-0 sm:p-4 overflow-hidden">
+        <div className="min-h-screen bg-stone-800 bg-[url('https://www.transparenttextures.com/patterns/wood-pattern.png')] text-stone-900 font-sans flex flex-col items-center justify-center p-0 overflow-hidden">
             {!pdfDoc ? (
                 <FileUpload onFileSelect={handleFileChange} isLoading={isLoading} />
             ) : (
