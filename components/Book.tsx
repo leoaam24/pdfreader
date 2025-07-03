@@ -4,6 +4,7 @@ import { Page } from './Page';
 import { BookmarkIcon, ZoomInIcon, ZoomOutIcon, ArrowLeftIcon, ArrowRightIcon, ChevronDoubleLeftIcon, ChevronDoubleRightIcon, BookLayoutIcon, ScrollLayoutIcon } from './icons';
 import type { Bookmark } from '../types';
 import type { ViewMode } from '../App';
+import type { Orientation } from '../hooks/useOrientation';
 
 interface BookProps {
     pdfDoc: PDFDocumentProxy;
@@ -15,26 +16,33 @@ interface BookProps {
     removeBookmark: (page: number) => void;
     viewMode: ViewMode;
     setViewMode: (mode: ViewMode) => void;
+    orientation: Orientation;
 }
 
-const useOrientation = () => {
-    const [orientation, setOrientation] = useState<'landscape' | 'portrait'>(
-        window.innerWidth > window.innerHeight ? 'landscape' : 'portrait'
+const renderBookmarkIconFn = (
+    pageNum: number,
+    bookmarks: Bookmark[],
+    handleBookmarkClick: (pageNum: number) => void,
+    side: 'left' | 'right',
+    numPages: number
+) => {
+    if (pageNum <= 0 || pageNum > numPages) return null;
+    const isBookmarked = bookmarks.some(b => b.page === pageNum);
+    const positionClass = side === 'left' ? 'left-4' : 'right-4';
+
+    return (
+        <button 
+            onClick={() => handleBookmarkClick(pageNum)} 
+            className={`absolute top-0 ${positionClass} z-30 w-8 h-12 transition-all duration-300 drop-shadow-md hover:scale-110`}
+            title={isBookmarked ? `Remove bookmark from page ${pageNum}` : `Bookmark page ${pageNum}`}
+        >
+            <BookmarkIcon className={`w-full h-full ${isBookmarked ? 'text-rose-500 fill-rose-500/30' : 'text-stone-400 fill-stone-400/20 hover:text-rose-400'}`} />
+        </button>
     );
-    useEffect(() => {
-        const handleResize = () => {
-            setOrientation(window.innerWidth > window.innerHeight ? 'landscape' : 'portrait');
-        };
-        window.addEventListener('resize', handleResize);
-        return () => window.removeEventListener('resize', handleResize);
-    }, []);
-    return orientation;
 };
 
 export const Book: React.FC<BookProps> = (props) => {
-    const { pdfDoc, currentPage, setCurrentPage, viewMode, setViewMode } = props;
-    const orientation = useOrientation();
-    const isBookMode = viewMode === 'book';
+    const { pdfDoc, currentPage, setCurrentPage, viewMode, orientation, bookmarks, addBookmark, removeBookmark } = props;
     const isLandscape = orientation === 'landscape';
     const pageRefs = useRef<(HTMLDivElement | null)[]>([]);
 
@@ -61,28 +69,52 @@ export const Book: React.FC<BookProps> = (props) => {
                 });
             }, { root: null, rootMargin: '0px', threshold: 0.4 });
 
-            pageRefs.current.forEach(ref => {
+            const currentRefs = pageRefs.current;
+            currentRefs.forEach(ref => {
                 if (ref) observer.observe(ref);
             });
 
             return () => {
-                pageRefs.current.forEach(ref => {
+                currentRefs.forEach(ref => {
                     if (ref) observer.unobserve(ref);
                 });
             };
         }
     }, [viewMode, pdfDoc.numPages, setCurrentPage]);
 
-    if (!isBookMode) {
-        return <ScrollView {...props} pageRefs={pageRefs} />;
+    const handleBookmarkClick = useCallback((pageNum: number) => {
+        if (pageNum <= 0 || pageNum > pdfDoc.numPages) return;
+        const isBookmarked = bookmarks.some(b => b.page === pageNum);
+
+        if (isBookmarked) {
+            removeBookmark(pageNum);
+        } else {
+            const name = prompt(`Enter a name for the bookmark on page ${pageNum}:`, `Page ${pageNum}`);
+            if (name) {
+                addBookmark(pageNum, name);
+            }
+        }
+    }, [pdfDoc, bookmarks, addBookmark, removeBookmark]);
+
+    // In portrait, App.tsx forces viewMode to 'scroll'.
+    // This logic respects that and provides a fallback.
+    if (viewMode === 'scroll') {
+        return <ScrollView {...props} pageRefs={pageRefs} handleBookmarkClick={handleBookmarkClick} />;
     }
     
-    return <BookView {...props} isLandscape={isLandscape} />;
+    // Book mode is only possible in landscape.
+    if (isLandscape) {
+       return <BookView {...props} isLandscape={isLandscape} handleBookmarkClick={handleBookmarkClick} />;
+    }
+
+    // Fallback for portrait + book mode state, which shouldn't happen.
+    return <ScrollView {...props} pageRefs={pageRefs} handleBookmarkClick={handleBookmarkClick} />;
 };
 
 
 // --- Scroll View Component ---
-const ScrollView: React.FC<BookProps & { pageRefs: React.MutableRefObject<(HTMLDivElement | null)[]> }> = ({ pdfDoc, setViewMode, viewMode, onGoToPage, currentPage, pageRefs }) => {
+const ScrollView: React.FC<BookProps & { pageRefs: React.MutableRefObject<(HTMLDivElement | null)[]>; handleBookmarkClick: (pageNum: number) => void; }> = (props) => {
+    const { pdfDoc, setViewMode, viewMode, onGoToPage, currentPage, pageRefs, orientation, bookmarks, handleBookmarkClick } = props;
     const [pageWidth, setPageWidth] = useState(window.innerWidth * 0.9);
 
     useEffect(() => {
@@ -105,29 +137,32 @@ const ScrollView: React.FC<BookProps & { pageRefs: React.MutableRefObject<(HTMLD
             const pageElement = document.getElementById(`page-container-${pageNum}`);
             pageElement?.scrollIntoView({ behavior: 'smooth', block: 'start' });
             input.value = '';
+            input.blur();
         }
     };
     
     return (
         <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-transparent" role="main">
-            <div className="w-full h-full overflow-y-auto pt-4 pb-24">
+            <div className="w-full h-full overflow-y-auto pt-20 pb-24">
                 <div className="flex flex-col items-center gap-4">
                     {Array.from({ length: pdfDoc.numPages }, (_, i) => i + 1).map(pageNum => (
                         <div 
                             key={pageNum} 
                             id={`page-container-${pageNum}`} 
-                            ref={el => { pageRefs.current[pageNum - 1] = el; }}
+                            ref={el => { if(el) pageRefs.current[pageNum - 1] = el; }}
                             data-page-num={pageNum}
-                            className="shadow-lg"
+                            className="shadow-lg relative"
+                            style={{ width: `${pageWidth}px` }}
                         >
                             <Page pdfDoc={pdfDoc} pageNum={pageNum} width={pageWidth} />
+                            {renderBookmarkIconFn(pageNum, bookmarks, handleBookmarkClick, 'right', pdfDoc.numPages)}
                         </div>
                     ))}
                 </div>
             </div>
              {/* Bottom Control Bar */}
              <div className="fixed bottom-0 left-0 right-0 w-full p-2 bg-stone-900/60 backdrop-blur-sm flex items-center justify-center flex-wrap gap-x-2 sm:gap-x-4 gap-y-2 z-10">
-                <ViewModeSwitcher viewMode={viewMode} setViewMode={setViewMode} />
+                <ViewModeSwitcher viewMode={viewMode} setViewMode={setViewMode} orientation={orientation} />
 
                 <span className="text-stone-300 text-sm font-semibold p-2 px-3 order-first md:order-none">
                     {`Page ${currentPage} of ${pdfDoc.numPages}`}
@@ -154,8 +189,8 @@ const ScrollView: React.FC<BookProps & { pageRefs: React.MutableRefObject<(HTMLD
 };
 
 // --- Book View Component ---
-const BookView: React.FC<BookProps & { isLandscape: boolean }> = (props) => {
-    const { pdfDoc, currentPage, setCurrentPage, onGoToPage, bookmarks, addBookmark, removeBookmark, viewMode, setViewMode, isLandscape } = props;
+const BookView: React.FC<BookProps & { isLandscape: boolean; handleBookmarkClick: (pageNum: number) => void; }> = (props) => {
+    const { pdfDoc, currentPage, setCurrentPage, onGoToPage, bookmarks, viewMode, setViewMode, isLandscape, orientation, handleBookmarkClick } = props;
     const [isTurning, setIsTurning] = useState(false);
     const [direction, setDirection] = useState<'next' | 'prev' | null>(null);
     const [containerWidth, setContainerWidth] = useState(1000);
@@ -219,20 +254,6 @@ const BookView: React.FC<BookProps & { isLandscape: boolean }> = (props) => {
         setDirection(null);
     };
     
-    const handleBookmarkClick = useCallback((pageNum: number) => {
-        if (pageNum <= 0 || pageNum > pdfDoc.numPages) return;
-        const isBookmarked = bookmarks.some(b => b.page === pageNum);
-
-        if (isBookmarked) {
-            removeBookmark(pageNum);
-        } else {
-            const name = prompt(`Enter a name for the bookmark on page ${pageNum}:`, `Page ${pageNum}`);
-            if (name) {
-                addBookmark(pageNum, name);
-            }
-        }
-    }, [pdfDoc, bookmarks, addBookmark, removeBookmark]);
-
     const handleZoomIn = () => setZoom(z => Math.min(z + 0.2, 3));
     const handleZoomOut = () => setZoom(z => Math.max(z - 0.2, 0.5));
 
@@ -286,19 +307,7 @@ const BookView: React.FC<BookProps & { isLandscape: boolean }> = (props) => {
     const rightPageNum = isTurning && direction === 'next' ? currentPage + pageIncrement : currentPage + 1;
 
     const renderBookmarkIcon = (pageNum: number, side: 'left' | 'right') => {
-        if (pageNum <= 0 || pageNum > pdfDoc.numPages) return null;
-        const isBookmarked = bookmarks.some(b => b.page === pageNum);
-        const positionClass = side === 'left' ? 'left-4' : 'right-4';
-
-        return (
-            <button 
-                onClick={() => handleBookmarkClick(pageNum)} 
-                className={`absolute top-0 ${positionClass} z-30 w-8 h-12 transition-all duration-300 drop-shadow-md hover:scale-110`}
-                title={isBookmarked ? `Remove bookmark from page ${pageNum}` : `Bookmark page ${pageNum}`}
-            >
-                <BookmarkIcon className={`w-full h-full ${isBookmarked ? 'text-rose-500 fill-rose-500/30' : 'text-stone-400 fill-stone-400/20 hover:text-rose-400'}`} />
-            </button>
-        );
+        return renderBookmarkIconFn(pageNum, bookmarks, handleBookmarkClick, side, pdfDoc.numPages);
     }
     
     const finalContainerWidth = isLandscape ? containerWidth + 32 : containerWidth + 16;
@@ -372,7 +381,7 @@ const BookView: React.FC<BookProps & { isLandscape: boolean }> = (props) => {
                 </div>
                 
                 <div className="flex items-center gap-2">
-                    <ViewModeSwitcher viewMode={viewMode} setViewMode={setViewMode} />
+                    <ViewModeSwitcher viewMode={viewMode} setViewMode={setViewMode} orientation={orientation} />
                     <div className="flex items-center gap-1 bg-black/20 rounded-lg p-1">
                         <button onClick={handleZoomOut} className="p-1 text-stone-300 hover:text-white rounded-md disabled:text-stone-500" title="Zoom Out" disabled={zoom <= 0.5}><ZoomOutIcon className="w-5 h-5"/></button>
                         <span className="text-stone-300 text-sm font-semibold w-12 text-center">{Math.round(zoom * 100)}%</span>
@@ -401,14 +410,16 @@ const BookView: React.FC<BookProps & { isLandscape: boolean }> = (props) => {
 };
 
 // --- View Mode Switcher Component ---
-const ViewModeSwitcher: React.FC<{viewMode: ViewMode, setViewMode: (mode: ViewMode) => void}> = ({ viewMode, setViewMode }) => {
+const ViewModeSwitcher: React.FC<{viewMode: ViewMode, setViewMode: (mode: ViewMode) => void, orientation: Orientation}> = ({ viewMode, setViewMode, orientation }) => {
+    const isPortrait = orientation === 'portrait';
     return (
         <div className="flex items-center gap-1 bg-black/20 rounded-lg p-1">
             <button
                 onClick={() => setViewMode('book')}
-                title="Book Mode"
-                className={`p-1 rounded-md ${viewMode === 'book' ? 'bg-rose-600 text-white' : 'text-stone-300 hover:bg-white/10'}`}
+                title={isPortrait ? "Book mode is only available in landscape" : "Book Mode"}
+                className={`p-1 rounded-md ${viewMode === 'book' ? 'bg-rose-600 text-white' : 'text-stone-300 hover:bg-white/10'} ${isPortrait ? 'cursor-not-allowed opacity-50' : ''}`}
                 aria-pressed={viewMode === 'book'}
+                disabled={isPortrait}
             >
                 <BookLayoutIcon className="w-5 h-5" />
             </button>

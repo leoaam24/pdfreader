@@ -5,6 +5,8 @@ import { FileUpload } from './components/FileUpload';
 import { BookmarkManager } from './components/BookmarkManager';
 import { useBookmarks } from './hooks/useBookmarks';
 import { BookOpenIcon, UploadIcon } from './components/icons';
+import { useOrientation, type Orientation } from './hooks/useOrientation';
+import { HamburgerMenu } from './components/HamburgerMenu';
 
 // pdfjs-dist is loaded from a CDN, so we declare it here to satisfy TypeScript
 declare const pdfjsLib: any;
@@ -19,6 +21,8 @@ const App: React.FC = () => {
     const [isLoading, setIsLoading] = useState(false);
     const [isBookmarkManagerOpen, setBookmarkManagerOpen] = useState(false);
     const [viewMode, setViewMode] = useState<ViewMode>('book');
+    const orientation = useOrientation();
+    const isPortrait = orientation === 'portrait';
 
     const { bookmarks, addBookmark, removeBookmark, setAllBookmarks } = useBookmarks(fileName);
 
@@ -27,6 +31,13 @@ const App: React.FC = () => {
             pdfjsLib.GlobalWorkerOptions.workerSrc = `https://mozilla.github.io/pdf.js/build/pdf.worker.mjs`;
         }
     }, []);
+    
+    // Force scroll view in portrait mode for better UX
+    useEffect(() => {
+        if (isPortrait && viewMode === 'book') {
+            setViewMode('scroll');
+        }
+    }, [isPortrait, viewMode]);
 
     const handleFileChange = useCallback(async (file: File) => {
         if (!file) return;
@@ -59,7 +70,7 @@ const App: React.FC = () => {
     const handleGoToPage = (pageNumber: number) => {
         if (pdfDoc) {
             const newPage = Math.max(1, Math.min(pageNumber, pdfDoc.numPages));
-            if (viewMode === 'book') {
+            if (viewMode === 'book' && !isPortrait) {
                  // In book mode, ensure the target page is on the left for consistency in landscape
                 const isLandscape = window.innerWidth > window.innerHeight;
                 const targetPage = isLandscape && newPage % 2 === 0 ? newPage - 1 : newPage;
@@ -95,27 +106,37 @@ const App: React.FC = () => {
                         removeBookmark={removeBookmark}
                         viewMode={viewMode}
                         setViewMode={setViewMode}
+                        orientation={orientation}
                     />
-                    <div className="fixed bottom-4 right-4 z-[60] flex flex-col items-end gap-3">
-                         <button 
-                            onClick={() => setBookmarkManagerOpen(true)}
-                            className="flex items-center gap-2 px-4 py-2 bg-stone-800/80 text-white font-semibold rounded-lg shadow-lg hover:bg-stone-900 transition-all transform hover:scale-105 backdrop-blur-sm"
-                            title="View Bookmarks"
-                            aria-label="View Bookmarks"
-                        >
-                            <BookOpenIcon className="w-5 h-5"/>
-                            <span className="hidden sm:inline">View Bookmarks</span>
-                        </button>
-                        <button 
-                            onClick={handleReset}
-                            className="flex items-center gap-2 px-4 py-2 bg-rose-600/90 text-white font-semibold rounded-lg shadow-lg hover:bg-rose-700 transition-all transform hover:scale-105 backdrop-blur-sm"
-                            title="Load Another PDF"
-                            aria-label="Load Another PDF"
-                        >
-                            <UploadIcon className="w-5 h-5"/>
-                            <span className="hidden sm:inline">Load New PDF</span>
-                        </button>
-                    </div>
+
+                    {isPortrait ? (
+                        <HamburgerMenu 
+                            onShowBookmarks={() => setBookmarkManagerOpen(true)}
+                            onLoadNewPdf={handleReset}
+                        />
+                    ) : (
+                        <div className="fixed bottom-4 right-4 z-[60] flex flex-col items-end gap-3">
+                             <button 
+                                onClick={() => setBookmarkManagerOpen(true)}
+                                className="flex items-center gap-2 px-4 py-2 bg-stone-800/80 text-white font-semibold rounded-lg shadow-lg hover:bg-stone-900 transition-all transform hover:scale-105 backdrop-blur-sm"
+                                title="View Bookmarks"
+                                aria-label="View Bookmarks"
+                            >
+                                <BookOpenIcon className="w-5 h-5"/>
+                                <span className="hidden sm:inline">View Bookmarks</span>
+                            </button>
+                            <button 
+                                onClick={handleReset}
+                                className="flex items-center gap-2 px-4 py-2 bg-rose-600/90 text-white font-semibold rounded-lg shadow-lg hover:bg-rose-700 transition-all transform hover:scale-105 backdrop-blur-sm"
+                                title="Load Another PDF"
+                                aria-label="Load Another PDF"
+                            >
+                                <UploadIcon className="w-5 h-5"/>
+                                <span className="hidden sm:inline">Load New PDF</span>
+                            </button>
+                        </div>
+                    )}
+
 
                     <BookmarkManager
                         isOpen={isBookmarkManagerOpen}
