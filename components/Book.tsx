@@ -91,7 +91,7 @@ export const Book: React.FC<BookProps> = (props) => {
 const ScrollView: React.FC<BookProps & { handleBookmarkClick: (pageNum: number) => void; }> = (props) => {
     const { pdfDoc, setViewMode, viewMode, onGoToPage, currentPage, orientation, bookmarks, handleBookmarkClick, setCurrentPage } = props;
     
-    const [pageWidth, setPageWidth] = useState(window.innerWidth > 768 ? window.innerWidth * 0.8 : window.innerWidth * 0.95);
+    const [pageWidth, setPageWidth] = useState(window.innerWidth * 0.9);
     const [pageAspectRatio, setPageAspectRatio] = useState(1.414); // A4-like default
 
     // Virtualization state: stores page numbers that should be rendered.
@@ -119,7 +119,7 @@ const ScrollView: React.FC<BookProps & { handleBookmarkClick: (pageNum: number) 
     // Update page width on resize
     useEffect(() => {
         const handleResize = () => {
-            setPageWidth(window.innerWidth > 768 ? window.innerWidth * 0.8 : window.innerWidth * 0.95);
+            setPageWidth(window.innerWidth * 0.9);
         };
         window.addEventListener('resize', handleResize);
         return () => window.removeEventListener('resize', handleResize);
@@ -201,7 +201,7 @@ const ScrollView: React.FC<BookProps & { handleBookmarkClick: (pageNum: number) 
                 </div>
             </div>
              {/* Bottom Control Bar */}
-             <div className="fixed bottom-0 left-0 right-0 w-full p-2 bg-stone-900/60 backdrop-blur-sm flex items-center justify-center flex-wrap gap-x-2 sm:gap-x-4 gap-y-2 z-10">
+             <div className="fixed bottom-4 left-1/2 -translate-x-1/2 p-2 bg-stone-900/80 backdrop-blur-sm flex items-center justify-center flex-wrap gap-x-2 sm:gap-x-4 gap-y-2 z-10 rounded-xl shadow-lg">
                 <ViewModeSwitcher viewMode={viewMode} setViewMode={setViewMode} orientation={orientation} />
 
                 <span className="text-stone-300 text-sm font-semibold p-2 px-3 order-first md:order-none">
@@ -238,6 +238,7 @@ const BookView: React.FC<BookProps & { isLandscape: boolean; handleBookmarkClick
     const [zoom, setZoom] = useState(1);
     const [pageAspectRatio, setPageAspectRatio] = useState(1.414);
     const [jumpToPageInput, setJumpToPageInput] = useState('');
+    const [startAnimation, setStartAnimation] = useState(false);
     
     const pageIncrement = 2; // BookView is always landscape
 
@@ -255,11 +256,11 @@ const BookView: React.FC<BookProps & { isLandscape: boolean; handleBookmarkClick
     useEffect(() => {
         const updateSize = () => {
             // Define available space for the book container.
-            const verticalPadding = 32; // Corresponds to py-4 on the parent container.
+            const verticalPadding = 32; // Corresponds to p-4 on the main container.
             const controlsHeight = bottomControlsRef.current?.offsetHeight || 60;
             const availableHeight = window.innerHeight - verticalPadding - controlsHeight;
             const availableWidth = window.innerWidth;
-            const targetWidthPercentage = 0.95;
+            const targetWidthPercentage = 0.9;
 
             // Calculate width based on viewport width constraint.
             const widthIfLimitedByWidth = availableWidth * targetWidthPercentage;
@@ -303,7 +304,20 @@ const BookView: React.FC<BookProps & { isLandscape: boolean; handleBookmarkClick
         setDirection(dir);
     };
 
-    const onTransitionEnd = () => {
+    useEffect(() => {
+        if (isTurning) {
+            // Use a minimal timeout to allow React to render the element in its "from" state
+            // before we apply the "to" state to trigger the CSS transition.
+            const id = setTimeout(() => setStartAnimation(true), 10);
+            return () => clearTimeout(id);
+        } else {
+            setStartAnimation(false);
+        }
+    }, [isTurning]);
+
+    const onAnimationEnd = () => {
+        if (!isTurning) return; // Prevent handler from firing on initial render or other transitions
+
         if (direction === 'next') {
             setCurrentPage(p => p + pageIncrement);
         } else if (direction === 'prev') {
@@ -325,45 +339,28 @@ const BookView: React.FC<BookProps & { isLandscape: boolean; handleBookmarkClick
         }
     };
     
-    const renderPageTurner = () => {
-        if (!isTurning || !direction) return null;
+    const renderScannerAnimation = () => {
+        if (!isTurning) return null;
 
-        let frontPageNum, backPageNum;
-        if (direction === 'next') {
-            frontPageNum = currentPage + 1;
-            backPageNum = currentPage + 2;
-        } else { // prev
-            frontPageNum = currentPage - 2;
-            backPageNum = currentPage - 1;
-        }
-        
-        const flipperStyle: React.CSSProperties = {
-            width: `${page_width}px`,
-            height: `${pageHeight}px`,
-            left: '50%',
-            transform: direction === 'next' ? 'rotateY(0deg)' : 'rotateY(-180deg)',
+        const style: React.CSSProperties = {
+            position: 'absolute',
+            top: 0,
+            height: '100%',
+            width: '1px',
+            backgroundColor: 'black',
+            filter: 'drop-shadow(0 0 3px rgba(0, 0, 0, 0.7))',
+            transition: 'left 1s ease-in-out',
+            zIndex: 30,
+            left: startAnimation 
+                ? (direction === 'next' ? '0%' : '100%') 
+                : (direction === 'next' ? '100%' : '0%')
         };
-        
-        const flipperClasses = `absolute top-0 z-20 transform-style-preserve-3d transition-transform duration-1000 ease-in-out ${direction === 'next' ? 'origin-left' : 'origin-right'} ${
-            isTurning && direction === 'next' ? '[transform:rotateY(-180deg)]' : ''
-        } ${
-            isTurning && direction === 'prev' ? '[transform:rotateY(0deg)]' : ''
-        }`;
 
-        return (
-            <div className={flipperClasses} style={flipperStyle} onTransitionEnd={onTransitionEnd}>
-                <div className="absolute w-full h-full backface-hidden overflow-hidden">
-                    <Page pdfDoc={pdfDoc} pageNum={direction === 'next' ? frontPageNum : backPageNum} width={page_width * zoom} />
-                </div>
-                <div className="absolute w-full h-full backface-hidden [transform:rotateY(180deg)] overflow-hidden">
-                    <Page pdfDoc={pdfDoc} pageNum={direction === 'next' ? backPageNum : frontPageNum} width={page_width * zoom} />
-                </div>
-            </div>
-        );
+        return <div style={style} onTransitionEnd={onAnimationEnd} />;
     };
     
-    const leftPageNum = isTurning && direction === 'prev' ? currentPage - pageIncrement : currentPage;
-    const rightPageNum = isTurning && direction === 'next' ? currentPage + pageIncrement : currentPage + 1;
+    const leftPageNum = currentPage;
+    const rightPageNum = currentPage + 1;
 
     const renderBookmarkIcon = (pageNum: number, side: 'left' | 'right') => {
         return renderBookmarkIconFn(pageNum, bookmarks, handleBookmarkClick, side, pdfDoc.numPages);
@@ -373,89 +370,91 @@ const BookView: React.FC<BookProps & { isLandscape: boolean; handleBookmarkClick
     const finalContainerHeight = pageHeight + 32;
 
     return (
-        <div className="fixed inset-0 z-50 flex flex-col items-center justify-start bg-transparent" role="main">
-            <div className="relative flex-grow flex items-center justify-center w-full py-4">
-                <div className="hidden md:flex fixed left-4 top-1/2 -translate-y-1/2 z-[60] flex-col items-center gap-4">
-                      <button onClick={() => onGoToPage(1)} disabled={currentPage <= 1 || isTurning} className="p-1.5 bg-stone-900/40 backdrop-blur-sm rounded-full text-stone-300 hover:text-white hover:bg-white/20 transition-all disabled:opacity-30 disabled:cursor-not-allowed" title="First Page"><ChevronDoubleLeftIcon className="w-5 h-5" /></button>
-                      <button onClick={() => turnPage('prev')} disabled={currentPage <= 1 || isTurning} className="p-2 bg-stone-900/40 backdrop-blur-sm rounded-full text-stone-300 hover:text-white hover:bg-white/20 transition-all disabled:opacity-30 disabled:cursor-not-allowed" title="Previous Page"><ArrowLeftIcon className="w-7 h-7" /></button>
-                </div>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-transparent p-4" role="main">
+            <div className="flex flex-col items-center gap-4">
+                <div className="relative flex items-center justify-center w-full">
+                    <div className="hidden md:flex fixed left-4 top-1/2 -translate-y-1/2 z-[60] flex-col items-center gap-4">
+                          <button onClick={() => onGoToPage(1)} disabled={currentPage <= 1 || isTurning} className="p-1.5 bg-stone-900/40 backdrop-blur-sm rounded-full text-stone-300 hover:text-white hover:bg-white/20 transition-all disabled:opacity-30 disabled:cursor-not-allowed" title="First Page"><ChevronDoubleLeftIcon className="w-5 h-5" /></button>
+                          <button onClick={() => turnPage('prev')} disabled={currentPage <= 1 || isTurning} className="p-2 bg-stone-900/40 backdrop-blur-sm rounded-full text-stone-300 hover:text-white hover:bg-white/20 transition-all disabled:opacity-30 disabled:cursor-not-allowed" title="Previous Page"><ArrowLeftIcon className="w-7 h-7" /></button>
+                    </div>
 
-                <div ref={containerRef} className="relative bg-stone-800 bg-[url('https://www.transparenttextures.com/patterns/wood-pattern.png')] p-4 shadow-2xl rounded-lg" style={{ width: `${finalContainerWidth}px`, height: `${finalContainerHeight}px` }}>
-                    <div className="relative w-full h-full perspective-2000">
-                        <div className="relative w-full h-full flex" style={{ height: `${pageHeight}px`, width: `${containerWidth}px` }}>
-                            {/* Left Page */}
-                            <div ref={leftPageRef} className="h-full relative overflow-auto w-1/2" style={{boxShadow: 'inset -5px 0 15px -5px rgba(0,0,0,0.4)'}}>
-                                <Page pdfDoc={pdfDoc} pageNum={leftPageNum} width={page_width * zoom} />
-                                {renderBookmarkIcon(leftPageNum, 'left')}
-                                {currentPage > 1 && (
-                                    <button onClick={() => turnPage('prev')} aria-label="Previous Page" className="absolute top-0 left-0 w-1/5 h-full z-20 group cursor-pointer bg-transparent border-none p-0">
-                                        <div className="absolute inset-0 bg-black opacity-0 group-hover:opacity-10 transition-opacity duration-300 rounded-l-md" />
-                                    </button>
-                                )}
-                            </div>
+                    <div ref={containerRef} className="relative bg-stone-800 bg-[url('https://www.transparenttextures.com/patterns/wood-pattern.png')] p-4 shadow-2xl rounded-lg" style={{ width: `${finalContainerWidth}px`, height: `${finalContainerHeight}px` }}>
+                        <div className="relative w-full h-full">
+                            <div className="relative w-full h-full flex" style={{ height: `${pageHeight}px`, width: `${containerWidth}px` }}>
+                                {/* Left Page */}
+                                <div ref={leftPageRef} className="h-full relative overflow-auto w-1/2" style={{boxShadow: 'inset -5px 0 15px -5px rgba(0,0,0,0.4)'}}>
+                                    <Page pdfDoc={pdfDoc} pageNum={leftPageNum} width={page_width * zoom} />
+                                    {renderBookmarkIcon(leftPageNum, 'left')}
+                                    {currentPage > 1 && (
+                                        <button onClick={() => turnPage('prev')} aria-label="Previous Page" className="absolute top-0 left-0 w-1/5 h-full z-20 group cursor-pointer bg-transparent border-none p-0">
+                                            <div className="absolute inset-0 bg-black opacity-0 group-hover:opacity-10 transition-opacity duration-300 rounded-l-md" />
+                                        </button>
+                                    )}
+                                </div>
 
-                            {/* Right Page */}
-                            <div ref={rightPageRef} className="w-1/2 h-full relative overflow-auto" style={{ boxShadow: 'inset 5px 0 15px -5px rgba(0,0,0,0.4)' }}>
-                                <Page pdfDoc={pdfDoc} pageNum={rightPageNum} width={page_width * zoom} />
-                                {renderBookmarkIcon(rightPageNum, 'right')}
-                                {rightPageNum < pdfDoc.numPages && (
-                                    <button onClick={() => turnPage('next')} aria-label="Next Page" className="absolute top-0 right-0 w-1/5 h-full z-20 group cursor-pointer bg-transparent border-none p-0">
-                                        <div className="absolute inset-0 bg-black opacity-0 group-hover:opacity-10 transition-opacity duration-300 rounded-r-md" />
-                                    </button>
-                                )}
+                                {/* Right Page */}
+                                <div ref={rightPageRef} className="w-1/2 h-full relative overflow-auto" style={{ boxShadow: 'inset 5px 0 15px -5px rgba(0,0,0,0.4)' }}>
+                                    <Page pdfDoc={pdfDoc} pageNum={rightPageNum} width={page_width * zoom} />
+                                    {renderBookmarkIcon(rightPageNum, 'right')}
+                                    {rightPageNum < pdfDoc.numPages && (
+                                        <button onClick={() => turnPage('next')} aria-label="Next Page" className="absolute top-0 right-0 w-1/5 h-full z-20 group cursor-pointer bg-transparent border-none p-0">
+                                            <div className="absolute inset-0 bg-black opacity-0 group-hover:opacity-10 transition-opacity duration-300 rounded-r-md" />
+                                        </button>
+                                    )}
+                                </div>
+                                
+                                <div className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-full bg-gradient-to-r from-transparent via-black/30 to-transparent pointer-events-none z-10" />
+                                {renderScannerAnimation()}
                             </div>
-                            
-                            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-full bg-gradient-to-r from-transparent via-black/30 to-transparent pointer-events-none z-10" />
-                            {renderPageTurner()}
                         </div>
                     </div>
-                </div>
-                
-                <div className="hidden md:flex fixed right-4 top-1/2 -translate-y-1/2 z-[60] flex-col items-center gap-4">
-                     <button onClick={() => turnPage('next')} disabled={currentPage + pageIncrement - 1 >= pdfDoc.numPages || isTurning} className="p-2 bg-stone-900/40 backdrop-blur-sm rounded-full text-stone-300 hover:text-white hover:bg-white/20 transition-all disabled:opacity-30 disabled:cursor-not-allowed" title="Next Page"><ArrowRightIcon className="w-7 h-7" /></button>
-                     <button onClick={() => onGoToPage(pdfDoc.numPages)} disabled={currentPage + pageIncrement -1 >= pdfDoc.numPages || isTurning} className="p-1.5 bg-stone-900/40 backdrop-blur-sm rounded-full text-stone-300 hover:text-white hover:bg-white/20 transition-all disabled:opacity-30 disabled:cursor-not-allowed" title="Last Page"><ChevronDoubleRightIcon className="w-5 h-5" /></button>
-                </div>
-            </div>
-
-            {/* Bottom Control Bar */}
-            <div ref={bottomControlsRef} className="w-full max-w-4xl mt-auto p-1 bg-stone-900/60 backdrop-blur-sm rounded-lg flex items-center justify-center flex-wrap gap-x-2 sm:gap-x-4 gap-y-2">
-                <div className="flex items-center gap-1 text-stone-300">
-                    <button onClick={() => onGoToPage(1)} disabled={currentPage <= 1 || isTurning} className="p-2 rounded-md hover:bg-white/10 disabled:opacity-30" title="First Page"><ChevronDoubleLeftIcon className="w-5 h-5" /></button>
-                    <button onClick={() => turnPage('prev')} disabled={currentPage <= 1 || isTurning} className="p-2 rounded-md hover:bg-white/10 disabled:opacity-30" title="Previous Page"><ArrowLeftIcon className="w-5 h-5" /></button>
-                </div>
-
-                <span className="text-stone-300 text-sm font-semibold p-2 px-3 order-first sm:order-none">
-                    {`Page ${currentPage}${isLandscape && currentPage + 1 <= pdfDoc.numPages ? ' - ' + (currentPage+1) : ''} of ${pdfDoc.numPages}`}
-                </span>
-
-                <div className="flex items-center gap-1 text-stone-300">
-                     <button onClick={() => turnPage('next')} disabled={currentPage + pageIncrement -1 >= pdfDoc.numPages || isTurning} className="p-2 rounded-md hover:bg-white/10 disabled:opacity-30" title="Next Page"><ArrowRightIcon className="w-5 h-5" /></button>
-                    <button onClick={() => onGoToPage(pdfDoc.numPages)} disabled={currentPage + pageIncrement - 1 >= pdfDoc.numPages || isTurning} className="p-2 rounded-md hover:bg-white/10 disabled:opacity-30" title="Last Page"><ChevronDoubleRightIcon className="w-5 h-5" /></button>
-                </div>
-                
-                <div className="flex items-center gap-2">
-                    <ViewModeSwitcher viewMode={viewMode} setViewMode={setViewMode} orientation={orientation} />
-                    <div className="flex items-center gap-1 bg-black/20 rounded-lg p-1">
-                        <button onClick={handleZoomOut} className="p-1 text-stone-300 hover:text-white rounded-md disabled:text-stone-500" title="Zoom Out" disabled={zoom <= 0.5}><ZoomOutIcon className="w-5 h-5"/></button>
-                        <span className="text-stone-300 text-sm font-semibold w-12 text-center">{Math.round(zoom * 100)}%</span>
-                        <button onClick={handleZoomIn} className="p-1 text-stone-300 hover:text-white rounded-md disabled:text-stone-500" title="Zoom In" disabled={zoom >= 3}><ZoomInIcon className="w-5 h-5"/></button>
+                    
+                    <div className="hidden md:flex fixed right-4 top-1/2 -translate-y-1/2 z-[60] flex-col items-center gap-4">
+                         <button onClick={() => turnPage('next')} disabled={currentPage + pageIncrement - 1 >= pdfDoc.numPages || isTurning} className="p-2 bg-stone-900/40 backdrop-blur-sm rounded-full text-stone-300 hover:text-white hover:bg-white/20 transition-all disabled:opacity-30 disabled:cursor-not-allowed" title="Next Page"><ArrowRightIcon className="w-7 h-7" /></button>
+                         <button onClick={() => onGoToPage(pdfDoc.numPages)} disabled={currentPage + pageIncrement -1 >= pdfDoc.numPages || isTurning} className="p-1.5 bg-stone-900/40 backdrop-blur-sm rounded-full text-stone-300 hover:text-white hover:bg-white/20 transition-all disabled:opacity-30 disabled:cursor-not-allowed" title="Last Page"><ChevronDoubleRightIcon className="w-5 h-5" /></button>
                     </div>
-                    <form onSubmit={handleJumpToPage} className="flex items-center gap-1 bg-black/20 rounded-lg p-1">
-                        <label htmlFor="page-jump-input-book" className="sr-only">Jump to page</label>
-                        <input
-                            id="page-jump-input-book"
-                            type="number"
-                            value={jumpToPageInput}
-                            onChange={(e) => setJumpToPageInput(e.target.value)}
-                            min="1"
-                            max={pdfDoc.numPages}
-                            className="w-20 bg-stone-700/50 text-white text-center rounded-md p-1 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500"
-                            placeholder="Go to..."
-                        />
-                        <button type="submit" className="p-1 text-stone-300 hover:text-white rounded-md" aria-label="Jump to specified page">
-                            <ArrowRightIcon className="w-5 h-5"/>
-                        </button>
-                    </form>
+                </div>
+
+                {/* Bottom Control Bar */}
+                <div ref={bottomControlsRef} className="w-full max-w-4xl p-1 bg-stone-900/60 backdrop-blur-sm rounded-lg flex items-center justify-center flex-wrap gap-x-2 sm:gap-x-4 gap-y-2">
+                    <div className="flex items-center gap-1 text-stone-300">
+                        <button onClick={() => onGoToPage(1)} disabled={currentPage <= 1 || isTurning} className="p-2 rounded-md hover:bg-white/10 disabled:opacity-30" title="First Page"><ChevronDoubleLeftIcon className="w-5 h-5" /></button>
+                        <button onClick={() => turnPage('prev')} disabled={currentPage <= 1 || isTurning} className="p-2 rounded-md hover:bg-white/10 disabled:opacity-30" title="Previous Page"><ArrowLeftIcon className="w-5 h-5" /></button>
+                    </div>
+
+                    <span className="text-stone-300 text-sm font-semibold p-2 px-3 order-first sm:order-none">
+                        {`Page ${currentPage}${isLandscape && currentPage + 1 <= pdfDoc.numPages ? ' - ' + (currentPage+1) : ''} of ${pdfDoc.numPages}`}
+                    </span>
+
+                    <div className="flex items-center gap-1 text-stone-300">
+                         <button onClick={() => turnPage('next')} disabled={currentPage + pageIncrement -1 >= pdfDoc.numPages || isTurning} className="p-2 rounded-md hover:bg-white/10 disabled:opacity-30" title="Next Page"><ArrowRightIcon className="w-5 h-5" /></button>
+                        <button onClick={() => onGoToPage(pdfDoc.numPages)} disabled={currentPage + pageIncrement - 1 >= pdfDoc.numPages || isTurning} className="p-2 rounded-md hover:bg-white/10 disabled:opacity-30" title="Last Page"><ChevronDoubleRightIcon className="w-5 h-5" /></button>
+                    </div>
+                    
+                    <div className="flex items-center gap-2">
+                        <ViewModeSwitcher viewMode={viewMode} setViewMode={setViewMode} orientation={orientation} />
+                        <div className="flex items-center gap-1 bg-black/20 rounded-lg p-1">
+                            <button onClick={handleZoomOut} className="p-1 text-stone-300 hover:text-white rounded-md disabled:text-stone-500" title="Zoom Out" disabled={zoom <= 0.5}><ZoomOutIcon className="w-5 h-5"/></button>
+                            <span className="text-stone-300 text-sm font-semibold w-12 text-center">{Math.round(zoom * 100)}%</span>
+                            <button onClick={handleZoomIn} className="p-1 text-stone-300 hover:text-white rounded-md disabled:text-stone-500" title="Zoom In" disabled={zoom >= 3}><ZoomInIcon className="w-5 h-5"/></button>
+                        </div>
+                        <form onSubmit={handleJumpToPage} className="flex items-center gap-1 bg-black/20 rounded-lg p-1">
+                            <label htmlFor="page-jump-input-book" className="sr-only">Jump to page</label>
+                            <input
+                                id="page-jump-input-book"
+                                type="number"
+                                value={jumpToPageInput}
+                                onChange={(e) => setJumpToPageInput(e.target.value)}
+                                min="1"
+                                max={pdfDoc.numPages}
+                                className="w-20 bg-stone-700/50 text-white text-center rounded-md p-1 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500"
+                                placeholder="Go to..."
+                            />
+                            <button type="submit" className="p-1 text-stone-300 hover:text-white rounded-md" aria-label="Jump to specified page">
+                                <ArrowRightIcon className="w-5 h-5"/>
+                            </button>
+                        </form>
+                    </div>
                 </div>
             </div>
         </div>
