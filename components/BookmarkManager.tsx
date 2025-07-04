@@ -1,6 +1,6 @@
 import React, { useRef } from 'react';
 import type { Bookmark } from '../types';
-import type { ViewMode } from '../App';
+import type { ViewMode } from '../types';
 import { BookmarkIcon, TrashIcon, CloseIcon, DownloadIcon, FileImportIcon } from './icons';
 
 interface BookmarkManagerProps {

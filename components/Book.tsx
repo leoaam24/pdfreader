@@ -1,9 +1,10 @@
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import { Page } from './Page';
 import { BookmarkIcon, ZoomInIcon, ZoomOutIcon, ArrowLeftIcon, ArrowRightIcon, ChevronDoubleLeftIcon, ChevronDoubleRightIcon, BookLayoutIcon, ScrollLayoutIcon, TableOfContentsIcon } from './icons';
 import type { Bookmark, OutlineItem } from '../types';
-import type { ViewMode } from '../App';
+import type { ViewMode } from '../types';
 import type { Orientation } from '../hooks/useOrientation';
 
 interface BookProps {
@@ -93,7 +94,7 @@ export const Book: React.FC<BookProps> = (props) => {
 const ScrollView: React.FC<BookProps & { handleBookmarkClick: (pageNum: number) => void; }> = (props) => {
     const { pdfDoc, setViewMode, viewMode, onGoToPage, currentPage, orientation, bookmarks, handleBookmarkClick, setCurrentPage, outline, onShowChapters } = props;
     
-    const [pageWidth, setPageWidth] = useState(window.innerWidth * 0.9);
+    const [pageWidth, setPageWidth] = useState(0);
     const [pageAspectRatio, setPageAspectRatio] = useState(1.414); // A4-like default
 
     // Virtualization state: stores page numbers that should be rendered.
@@ -121,11 +122,17 @@ const ScrollView: React.FC<BookProps & { handleBookmarkClick: (pageNum: number) 
     // Update page width on resize
     useEffect(() => {
         const handleResize = () => {
-            setPageWidth(window.innerWidth * 0.9);
+            // Use clientWidth for a more reliable measurement that excludes scrollbar width
+            // and provides a more stable value during orientation changes.
+            setPageWidth(document.documentElement.clientWidth * 0.9);
         };
+        
+        handleResize(); // Set initial size correctly on mount.
+        
         window.addEventListener('resize', handleResize);
         return () => window.removeEventListener('resize', handleResize);
-    }, []);
+    }, []); // Empty array ensures this runs only on mount and unmount.
+
 
     const observerCallback = useCallback((entries: IntersectionObserverEntry[]) => {
         entries.forEach(entry => {
@@ -176,7 +183,7 @@ const ScrollView: React.FC<BookProps & { handleBookmarkClick: (pageNum: number) 
     const pageHeight = pageWidth * pageAspectRatio;
     
     return (
-        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-transparent" role="main">
+        <div className="fixed inset-0 z-50 flex flex-col items-center bg-transparent" role="main">
             <div className="w-full h-full overflow-y-auto pt-20 pb-24">
                 <div className="flex flex-col items-center gap-4">
                     {Array.from({ length: pdfDoc.numPages }, (_, i) => i + 1).map(pageNum => (
@@ -188,7 +195,7 @@ const ScrollView: React.FC<BookProps & { handleBookmarkClick: (pageNum: number) 
                             className="shadow-lg relative bg-stone-200"
                             style={{ width: `${pageWidth}px`, height: `${pageHeight}px` }}
                         >
-                            {visiblePages.has(pageNum) ? (
+                            {visiblePages.has(pageNum) && pageWidth > 0 ? (
                                 <>
                                     <Page pdfDoc={pdfDoc} pageNum={pageNum} width={pageWidth} />
                                     {renderBookmarkIconFn(pageNum, bookmarks, handleBookmarkClick, 'right', pdfDoc.numPages)}

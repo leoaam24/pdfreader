@@ -1,7 +1,7 @@
 import React from 'react';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import type { OutlineItem } from '../types';
-import type { ViewMode } from '../App';
+import type { ViewMode } from '../types';
 import { CloseIcon, TableOfContentsIcon } from './icons';
 
 interface ChapterPanelProps {

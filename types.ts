@@ -11,3 +11,5 @@ export interface OutlineItem {
   url?: string | null;
   unsafeUrl?: string | null;
 }
+
+export type ViewMode = 'book' | 'scroll';
