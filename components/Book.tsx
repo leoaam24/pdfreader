@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import { Page } from './Page';
-import { BookmarkIcon, ZoomInIcon, ZoomOutIcon, ArrowLeftIcon, ArrowRightIcon, ChevronDoubleLeftIcon, ChevronDoubleRightIcon, BookLayoutIcon, ScrollLayoutIcon } from './icons';
-import type { Bookmark } from '../types';
+import { BookmarkIcon, ZoomInIcon, ZoomOutIcon, ArrowLeftIcon, ArrowRightIcon, ChevronDoubleLeftIcon, ChevronDoubleRightIcon, BookLayoutIcon, ScrollLayoutIcon, TableOfContentsIcon } from './icons';
+import type { Bookmark, OutlineItem } from '../types';
 import type { ViewMode } from '../App';
 import type { Orientation } from '../hooks/useOrientation';
 
@@ -17,6 +17,8 @@ interface BookProps {
     viewMode: ViewMode;
     setViewMode: (mode: ViewMode) => void;
     orientation: Orientation;
+    outline: OutlineItem[];
+    onShowChapters: () => void;
 }
 
 const renderBookmarkIconFn = (
@@ -89,7 +91,7 @@ export const Book: React.FC<BookProps> = (props) => {
 
 // --- Scroll View Component ---
 const ScrollView: React.FC<BookProps & { handleBookmarkClick: (pageNum: number) => void; }> = (props) => {
-    const { pdfDoc, setViewMode, viewMode, onGoToPage, currentPage, orientation, bookmarks, handleBookmarkClick, setCurrentPage } = props;
+    const { pdfDoc, setViewMode, viewMode, onGoToPage, currentPage, orientation, bookmarks, handleBookmarkClick, setCurrentPage, outline, onShowChapters } = props;
     
     const [pageWidth, setPageWidth] = useState(window.innerWidth * 0.9);
     const [pageAspectRatio, setPageAspectRatio] = useState(1.414); // A4-like default
@@ -202,7 +204,7 @@ const ScrollView: React.FC<BookProps & { handleBookmarkClick: (pageNum: number) 
             </div>
              {/* Bottom Control Bar */}
              <div className="fixed bottom-4 left-1/2 -translate-x-1/2 p-2 bg-stone-900/80 backdrop-blur-sm flex items-center justify-center flex-wrap gap-x-2 sm:gap-x-4 gap-y-2 z-10 rounded-xl shadow-lg">
-                <ViewModeSwitcher viewMode={viewMode} setViewMode={setViewMode} orientation={orientation} />
+                <ViewModeControl {...props} />
 
                 <span className="text-stone-300 text-sm font-semibold p-2 px-3 order-first md:order-none">
                     {`Page ${currentPage} of ${pdfDoc.numPages}`}
@@ -230,7 +232,7 @@ const ScrollView: React.FC<BookProps & { handleBookmarkClick: (pageNum: number) 
 
 // --- Book View Component ---
 const BookView: React.FC<BookProps & { isLandscape: boolean; handleBookmarkClick: (pageNum: number) => void; }> = (props) => {
-    const { pdfDoc, currentPage, setCurrentPage, onGoToPage, bookmarks, viewMode, setViewMode, isLandscape, orientation, handleBookmarkClick } = props;
+    const { pdfDoc, currentPage, setCurrentPage, onGoToPage, bookmarks, viewMode, setViewMode, isLandscape, orientation, handleBookmarkClick, outline, onShowChapters } = props;
     const [isTurning, setIsTurning] = useState(false);
     const [direction, setDirection] = useState<'next' | 'prev' | null>(null);
     const [containerWidth, setContainerWidth] = useState(1000);
@@ -432,7 +434,7 @@ const BookView: React.FC<BookProps & { isLandscape: boolean; handleBookmarkClick
                     </div>
                     
                     <div className="flex items-center gap-2">
-                        <ViewModeSwitcher viewMode={viewMode} setViewMode={setViewMode} orientation={orientation} />
+                        <ViewModeControl {...props} />
                         <div className="flex items-center gap-1 bg-black/20 rounded-lg p-1">
                             <button onClick={handleZoomOut} className="p-1 text-stone-300 hover:text-white rounded-md disabled:text-stone-500" title="Zoom Out" disabled={zoom <= 0.5}><ZoomOutIcon className="w-5 h-5"/></button>
                             <span className="text-stone-300 text-sm font-semibold w-12 text-center">{Math.round(zoom * 100)}%</span>
@@ -461,9 +463,19 @@ const BookView: React.FC<BookProps & { isLandscape: boolean; handleBookmarkClick
     );
 };
 
-// --- View Mode Switcher Component ---
-const ViewModeSwitcher: React.FC<{viewMode: ViewMode, setViewMode: (mode: ViewMode) => void, orientation: Orientation}> = ({ viewMode, setViewMode, orientation }) => {
+interface ViewModeControlProps {
+    viewMode: ViewMode;
+    setViewMode: (mode: ViewMode) => void;
+    orientation: Orientation;
+    outline: OutlineItem[];
+    onShowChapters: () => void;
+}
+
+// --- View Mode and Chapters Control ---
+const ViewModeControl: React.FC<ViewModeControlProps> = ({ viewMode, setViewMode, orientation, outline, onShowChapters }) => {
     const isPortrait = orientation === 'portrait';
+    const hasChapters = outline && outline.length > 0;
+
     return (
         <div className="flex items-center gap-1 bg-black/20 rounded-lg p-1">
             <button
@@ -483,6 +495,19 @@ const ViewModeSwitcher: React.FC<{viewMode: ViewMode, setViewMode: (mode: ViewMo
             >
                 <ScrollLayoutIcon className="w-5 h-5" />
             </button>
+            {hasChapters && (
+                <>
+                    <div className="h-4 w-px bg-stone-600 mx-1"></div>
+                    <button
+                        onClick={onShowChapters}
+                        title="Table of Contents"
+                        className="p-1 rounded-md text-stone-300 hover:text-white"
+                        aria-label="Show table of contents"
+                    >
+                        <TableOfContentsIcon className="w-5 h-5" />
+                    </button>
+                </>
+            )}
         </div>
     );
 };

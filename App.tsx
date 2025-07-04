@@ -3,10 +3,12 @@ import type { PDFDocumentProxy } from 'pdfjs-dist';
 import { Book } from './components/Book';
 import { FileUpload } from './components/FileUpload';
 import { BookmarkManager } from './components/BookmarkManager';
+import { ChapterPanel } from './components/ChapterPanel';
 import { useBookmarks } from './hooks/useBookmarks';
 import { BookOpenIcon, UploadIcon } from './components/icons';
 import { useOrientation, type Orientation } from './hooks/useOrientation';
 import { HamburgerMenu } from './components/HamburgerMenu';
+import type { OutlineItem } from './types';
 
 // pdfjs-dist is loaded from a CDN, so we declare it here to satisfy TypeScript
 declare const pdfjsLib: any;
@@ -20,6 +22,8 @@ const App: React.FC = () => {
     const [fileName, setFileName] = useState<string>('');
     const [isLoading, setIsLoading] = useState(false);
     const [isBookmarkManagerOpen, setBookmarkManagerOpen] = useState(false);
+    const [isChaptersPanelOpen, setChaptersPanelOpen] = useState(false);
+    const [outline, setOutline] = useState<OutlineItem[]>([]);
     const [viewMode, setViewMode] = useState<ViewMode>('book');
     const orientation = useOrientation();
     const isPortrait = orientation === 'portrait';
@@ -46,6 +50,7 @@ const App: React.FC = () => {
         setPdfFile(file);
         setFileName(file.name);
         setCurrentPage(1);
+        setOutline([]);
         
         const reader = new FileReader();
         reader.onload = async (e) => {
@@ -54,6 +59,8 @@ const App: React.FC = () => {
                 try {
                     const doc = await pdfjsLib.getDocument({ data: typedArray }).promise;
                     setPdfDoc(doc);
+                    const outlineData = await doc.getOutline();
+                    setOutline(outlineData || []);
                 } catch (error) {
                     console.error("Error loading PDF:", error);
                     alert("Failed to load PDF file. It might be corrupted or in an unsupported format.");
@@ -88,6 +95,8 @@ const App: React.FC = () => {
         setCurrentPage(1);
         setFileName('');
         setBookmarkManagerOpen(false);
+        setChaptersPanelOpen(false);
+        setOutline([]);
     };
 
     return (
@@ -107,12 +116,16 @@ const App: React.FC = () => {
                         viewMode={viewMode}
                         setViewMode={setViewMode}
                         orientation={orientation}
+                        outline={outline}
+                        onShowChapters={() => setChaptersPanelOpen(true)}
                     />
 
                     {isPortrait ? (
                         <HamburgerMenu 
                             onShowBookmarks={() => setBookmarkManagerOpen(true)}
                             onLoadNewPdf={handleReset}
+                            onShowChapters={() => setChaptersPanelOpen(true)}
+                            hasChapters={outline.length > 0}
                         />
                     ) : (
                         <div className="fixed bottom-4 right-4 z-[60] flex flex-col items-end gap-3">
@@ -146,6 +159,15 @@ const App: React.FC = () => {
                         onRemoveBookmark={removeBookmark}
                         onUploadBookmarks={setAllBookmarks}
                         fileName={fileName || 'bookmarks'}
+                        viewMode={viewMode}
+                    />
+
+                    <ChapterPanel
+                        isOpen={isChaptersPanelOpen}
+                        onClose={() => setChaptersPanelOpen(false)}
+                        outline={outline}
+                        pdfDoc={pdfDoc}
+                        onGoToPage={handleGoToPage}
                         viewMode={viewMode}
                     />
                 </>

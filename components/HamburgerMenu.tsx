@@ -1,12 +1,14 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { HamburgerIcon, CloseIcon, BookOpenIcon, UploadIcon } from './icons';
+import { HamburgerIcon, CloseIcon, BookOpenIcon, UploadIcon, TableOfContentsIcon } from './icons';
 
 interface HamburgerMenuProps {
   onShowBookmarks: () => void;
   onLoadNewPdf: () => void;
+  onShowChapters: () => void;
+  hasChapters: boolean;
 }
 
-export const HamburgerMenu: React.FC<HamburgerMenuProps> = ({ onShowBookmarks, onLoadNewPdf }) => {
+export const HamburgerMenu: React.FC<HamburgerMenuProps> = ({ onShowBookmarks, onLoadNewPdf, onShowChapters, hasChapters }) => {
     const [isOpen, setIsOpen] = useState(false);
     const menuRef = useRef<HTMLDivElement>(null);
 
@@ -59,6 +61,16 @@ export const HamburgerMenu: React.FC<HamburgerMenuProps> = ({ onShowBookmarks, o
                 aria-labelledby="menu-button"
             >
                 <div className="p-4 flex flex-col gap-4 mt-16">
+                    {hasChapters && (
+                        <button
+                            onClick={() => { onShowChapters(); setIsOpen(false); }}
+                            className="flex items-center gap-3 w-full text-left p-3 rounded-lg text-stone-700 hover:bg-stone-200 hover:text-stone-900 transition-colors"
+                            role="menuitem"
+                        >
+                            <TableOfContentsIcon className="w-6 h-6" />
+                            <span className="font-semibold">Table of Contents</span>
+                        </button>
+                    )}
                     <button
                         onClick={() => { onShowBookmarks(); setIsOpen(false); }}
                         className="flex items-center gap-3 w-full text-left p-3 rounded-lg text-stone-700 hover:bg-stone-200 hover:text-stone-900 transition-colors"
